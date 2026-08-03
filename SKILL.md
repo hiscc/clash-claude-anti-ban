@@ -1,26 +1,29 @@
 ---
 name: clash-claude-anti-ban
-description: Diagnose and fix proxy configurations that may expose a user's real network path to Claude. Implement Claude-scoped fail-closed behavior so Claude uses the intended proxy when available, fails when the proxy is unavailable, and unrelated websites remain usable. Verify IPv4, IPv6, DNS, DoH, WebRTC, UDP/QUIC, failover, restart, and subscription persistence before declaring success.
+description: Diagnose and fix proxy configurations where Claude uses an unexpected node, DIRECT path, mainland-China DNS, uncovered IPv6, or bypassing WebRTC/UDP/QUIC while a proxy is active. Use when configuring Clash, ClashX Pro/XPro, Clash Verge Rev, Mihomo, VPN or similar clients so Claude HTTPS and DNS follow the user-approved proxy region in rule mode, with runtime and subscription-persistence verification.
 ---
 
-# Claude Proxy Leak Hardening
+# Claude Proxy Path Hardening
 
 ## Required outcome
 
-Implement and verify this behavior on the user's actual device:
+Implement and prove this result on the user's actual device:
 
-| Proxy state | Claude and Anthropic traffic | Unrelated traffic |
-|---|---|---|
-| Available | Use the user-approved proxy group and exit | Preserve the user's existing routing policy |
-| Not started, exited, crashed, or no usable node | Fail; never connect directly | Continue normally |
+| Traffic | Required result |
+|---|---|
+| Claude HTTPS/TCP | Use the user-approved group and currently selected node |
+| Claude DNS/DoH/DoT | Use an encrypted resolver through the same approved proxy path; never use mainland-China or local-ISP DNS |
+| Claude IPv6 | Use the approved path or fail cleanly |
+| Claude WebRTC/UDP/QUIC | Use the approved path or be rejected; never fall through to `DIRECT` |
+| Unrelated traffic | Preserve the user's intended rule-mode routing |
 
-This is **Claude scoped fail-closed**, not a device-wide kill switch. Do not block the whole device when only Claude is protected.
+Do not replace this objective with a proxy-process exit guard. In regions where Claude direct access already fails, the observed risk is normally an active proxy choosing an unexpected egress or DNS path. Implement an exit-time kill switch only when the user separately requests it and a baseline proves that direct Claude access succeeds.
 
-Do not stop after explaining a solution. When the user has authorized implementation, inspect the actual environment, back it up, make the changes, restart or reload as required, and verify effective traffic.
+Do not stop at advice or example YAML when implementation is authorized. Inspect, back up, modify, reload and verify the effective runtime.
 
 ## Protected scope
 
-Start with these suffixes and extend the list only from observed Claude connections or current official documentation:
+Start with these suffixes and add domains only from observed Claude connections or current official documentation:
 
 ```text
 claude.ai
@@ -28,142 +31,121 @@ claude.com
 anthropic.com
 ```
 
-Include every subdomain. Do not route unrelated domains through the protected group merely because the group has an AI-themed name.
+Include subdomains. Treat `claudeusercontent.com` as conditional: add it when observed in the user's Claude client.
 
-## Truths that constrain the implementation
+## Non-negotiable facts
 
-- Rules inside a proxy core disappear when that core is not running. TUN, strict routing, or disabling the system proxy cannot by themselves make Claude fail after the proxy exits.
-- A protected proxy group must not contain `DIRECT`, a direct-only group, or a direct fallback. An accidentally empty protected group must reject or fail.
-- A guard that must survive proxy exit must be owned outside the proxy application's lifecycle.
-- DNS resolver exposure is a network inconsistency and may reveal the user's IP to the resolver. It does not by itself prove that the Claude HTTPS endpoint received the real IP.
-- A device-wide firewall is the wrong default for this task because unrelated websites must remain usable.
-- Configuration text is not proof. Only post-change runtime evidence can pass acceptance.
+- TUN/enhanced mode means traffic enters the proxy core; it does not mean every destination uses a proxy node. Rules still decide `DIRECT`, proxy or reject.
+- The macOS `utunN` number is dynamic. Never hard-code the observed interface number.
+- When a verified TUN/enhanced mode already intercepts the in-scope clients, a simultaneous OS HTTP/HTTPS/SOCKS proxy is normally unnecessary. Do not enable both without an observed requirement.
+- A proxy-group label is not proof. Resolve the full chain to its concrete selected node.
+- DNS provider names and DNS exit paths are different facts. Prove the resolver connection's actual outbound group and node.
+- Anycast can make a resolver's displayed city differ from the proxy city. This is acceptable only when logs prove the DNS transport used the approved node and no forbidden mainland/local resolver appeared.
+- Old Clash cores can skip a matched rule when its selected adapter does not support UDP, continue evaluating rules and ultimately use `DIRECT`. Never infer UDP safety from a TCP rule.
+- Configuration text is not acceptance evidence. Only post-change runtime observations can pass a gate.
 
-## Execution procedure
+## Procedure
 
-### 1. Discover without mutation
+### 1. Inspect without mutation
 
-Identify and record:
+Determine:
 
-- operating system and version;
-- every running or installed proxy/VPN client that can affect routing;
-- active profile, core version, TUN/system-proxy state, local proxy ports and controller;
-- protected proxy group and the concrete selected node;
-- configuration overwrite lifecycle, including subscription updates;
-- browser secure-DNS settings and every Claude client in scope.
+- operating system, proxy application and exact core version;
+- active profile location, including iCloud or generated-profile storage;
+- TUN/enhanced mode, OS system-proxy state, DNS interception and IPv6 state;
+- rule mode and controller/log access;
+- Claude group members, nested groups, concrete selected node, node region and UDP support;
+- configured DNS, fallback DNS, browser DoH, WebRTC and QUIC policies;
+- every in-scope Claude client: browser, desktop app, CLI, extension or embedded WebView;
+- how subscription updates overwrite or merge local changes.
 
-Before implementation, declare the acceptance scope as a matrix of `client × protected function × domain set`. Do not omit a discovered Claude client or network function merely because it is difficult to test.
-
-Use official documentation for the installed version before inventing or changing keys. Redact subscription URLs, node addresses, credentials, UUIDs, tokens, cookies and full public IPs.
+Redact subscription URLs, credentials, node addresses, tokens, cookies and full public IPs.
 
 ### 2. Establish a baseline
 
-Test Claude routing, IPv4, IPv6, DNS/DoH, WebRTC/STUN and UDP/QUIC before modification. Also sample unrelated destinations and record their PAC decision, proxy group, exit class and DNS path so unchanged behavior can be verified later. Separate observed facts from inference.
+Generate fresh Claude and DNS traffic. Record the actual rule, group chain, concrete node, network type and resolver path. Test IPv4, IPv6, DNS/DoH, WebRTC/STUN and UDP/QUIC separately.
 
-### 3. Back up and plan recovery
+Separate these conclusions:
 
-Back up every file or system setting that will change. Record an exact restore procedure. Do not perform a destructive network test over the only remote connection to the device.
-
-### 4. Implement for the detected client
-
-The implementation may differ by client, but it must satisfy all of these invariants:
-
-1. Protected domains select the intended proxy group before broader rules.
-2. No path from the protected group can reach `DIRECT`, including nested groups and empty fallbacks.
-3. Protected DNS and encrypted DNS follow the intended proxy path or fail.
-4. IPv6, WebRTC/STUN and UDP/QUIC follow the intended path or fail.
-5. Subscription updates cannot erase the protection.
-6. A guard independent of the proxy process prevents protected traffic from becoming direct after the proxy exits.
-7. The independent guard does not block unrelated websites.
-
-Choose the guard from observed client capabilities:
-
-| In-scope client behavior | Required implementation |
+| Observation | Valid conclusion |
 |---|---|
-| Honors the OS PAC | Install a persistent PAC outside the proxy application's lifecycle and disable proxy-unavailable fallback |
-| Supports an application-specific proxy | Pin that application to the detected local proxy port without a direct fallback |
-| Ignores PAC and has no fixed-proxy setting | Use a domain-aware OS content filter or application firewall verified for that client |
-| Cannot be intercepted without device-wide blocking | Report the gate as `NOT TESTED` or `FAIL`; do not silently block the whole device |
+| System DNS points to a Fake-IP address | DNS interception is active; upstream safety is still unknown |
+| Claude TCP log shows a Taiwan node | HTTPS path is correct for that request only |
+| DNS test shows a mainland resolver | DNS path is inconsistent even if HTTPS is correct |
+| Selected node reports `udp: false` | UDP must have an explicit reject/failure path |
 
-For every platform-specific mechanism:
+### 3. Back up
 
-1. Read current official OS/client documentation before changing it.
-2. Inspect the existing PAC, system proxy, app proxy and managed policies.
-3. Preserve their behavior for every unprotected destination.
-4. Ensure the guard is loaded at login or boot independently of the proxy client.
-5. Prove the guard remains active after fully quitting and force-killing the proxy.
-6. Record exact install, verification and restore commands for the detected platform.
+Back up every profile, preference and browser policy that will change. Record exact restore locations. Do not expose secrets in logs or commits.
 
-If an existing remote PAC, MDM profile or managed policy cannot be composed without changing its lifecycle or decisions, do not replace it with a copied/static approximation. Stop that implementation path and report the guard as unresolved.
+### 4. Implement invariants
 
-For proxy-aware browsers and desktop clients, a persistent platform PAC is one possible reference implementation. `originalRoute` represents the user's pre-existing PAC decision; if no PAC existed and direct access was the observed original behavior, it may return `DIRECT`:
+Choose mechanisms supported by the detected client and version. The final configuration must satisfy all invariants:
 
-```javascript
-function protectedHost(host) {
-  host = host.toLowerCase()
-  return host === 'claude.ai' || shExpMatch(host, '*.claude.ai') ||
-    host === 'claude.com' || shExpMatch(host, '*.claude.com') ||
-    host === 'anthropic.com' || shExpMatch(host, '*.anthropic.com')
-}
+1. Put protected-domain rules before broader direct, GeoIP and catch-all rules.
+2. Route protected domains to one stable protected group.
+3. If the user wants `openAI → 节点选择组`, make `openAI` contain only that group. Verify the current nested selection is the approved concrete node.
+4. Do not add automatic `DIRECT`, latency-test or unrelated-region fallback to the protected chain. An explicit manual user selection is not an automatic fallback, but acceptance fails while it selects `DIRECT` or an unapproved node.
+5. Replace mainland plaintext DNS and mainland DoH/DoT for protected resolution.
+6. Make encrypted DNS transport use the same protected group and selected node. Merely changing `nameserver` to an overseas URL is insufficient when the core dials that URL directly.
+7. Disable IPv6 when it cannot be proved safe; otherwise route and verify it.
+8. For each protected TCP rule targeting a UDP-incapable group, add a later matching `REJECT` rule or an equivalent UDP-safe control. TCP must hit the proxy rule first; unsupported UDP must continue to reject, never direct.
+9. Disable or constrain browser-specific DoH, non-proxied WebRTC UDP and QUIC when they can bypass the verified path.
+10. Preserve the repair across subscription refreshes. Prefer supported merge/override facilities; otherwise install an idempotent post-update patcher and prove it runs in the profile's real storage location.
 
-function originalRoute(url, host) {
-  // Replace with the user's original PAC logic. Do not assume DIRECT.
-  return 'DIRECT'
-}
+Do not claim that `tun: true`, Fake-IP, an overseas resolver address or a group named `openAI` satisfies these invariants without runtime evidence.
 
-function FindProxyForURL(url, host) {
-  if (protectedHost(host)) return 'PROXY 127.0.0.1:LOCAL_PROXY_PORT'
-  return originalRoute(url, host)
-}
-```
+## XPro / ClashX Pro reference pattern
 
-The protected return contains no `DIRECT` fallback. The PAC/guard must remain installed when the proxy exits, while `LOCAL_PROXY_PORT` is replaced with the detected client port. Configure the platform so a missing protected proxy cannot silently fall back; verify this behavior rather than assuming it from PAC text.
+Use this pattern when actual inspection confirms XPro enhanced mode is the active interception mechanism:
 
-PAC alone does not cover applications that ignore platform proxy settings. An application-specific proxy must pass the destination hostname to the local proxy for remote resolution. If the client can bypass with direct TCP, IPv6, UDP or QUIC, add a domain-aware filter for that client or mark the corresponding gate unresolved. IP-only firewall tables are not a generic domain guard because shared or changing CDN addresses can block unrelated websites.
+| Setting | Target |
+|---|---|
+| Enhanced mode / TUN | On |
+| Set as system proxy | Off after verifying TUN covers every in-scope client |
+| Outbound mode | Rule |
+| Protected chain | `Claude → openAI → 节点选择组 → approved node` |
+| DNS | Local encrypted forwarder or supported core DNS feature whose transport is proven through the protected chain |
+| Browser DoH | Off or pinned to the same verified path |
+| WebRTC | Disable non-proxied UDP |
+| QUIC | Disable when the selected node/core cannot proxy UDP safely |
 
-For browser DNS prefetch, independent DoH, WebRTC/STUN and QUIC, inspect the actual browser policy and connection log. Disable the bypass only for the protected client/profile when safe, or route it through the protected proxy. Do not globally disable unrelated network features merely to make a test pass.
+Legacy Clash v1.10's built-in DoH dialer can connect directly rather than through a proxy group. If the required result cannot be obtained natively, use a local encrypted DNS forwarder configured to send DoH through the local Clash HTTP/SOCKS port, then route the DoH endpoint through the protected group. Prove the resulting chain in the core log.
 
-To build the protected destination set, capture a clean Claude login and usage session, correlate hostnames with client/core logs, and add only Claude/Anthropic-owned or necessary authentication/API endpoints supported by observed evidence or current official documentation. Re-run this discovery after meaningful client updates. Do not proxy an entire third-party CDN suffix without proving it is required.
+If XPro stores profiles in iCloud and a background persistence agent lacks permission to read that path, do not report persistence as solved. Use a supported local profile/override location or another mechanism that survives unattended subscription updates.
 
-### 5. Restart and verify runtime behavior
+## Acceptance gates
 
-Run every applicable gate below. Mark each `PASS`, `FAIL`, or `NOT TESTED`. Never convert an unrun test into `PASS`.
+Run every applicable gate and mark it `PASS`, `FAIL` or `NOT TESTED`.
 
 | Gate | PASS condition |
 |---|---|
-| Declared scope | Every discovered `client × protected function × domain set` entry has an explicit gate |
-| Protected route | A fresh request from each in-scope Claude client selects the intended group and node, confirmed by core log or process-level connection evidence |
-| IPv4 | The same protected client request uses the expected proxy exit; no local ISP address |
-| IPv6 | Same protected exit or clean failure |
-| DNS and DoH/DoT | No forbidden local resolver path for protected queries |
-| WebRTC/STUN | No public local address; protected UDP follows proxy or fails |
-| UDP/QUIC | Follows the protected outbound or fails |
-| Node failure | Claude fails and no direct connection appears |
-| Core crash | Claude fails and unrelated websites remain usable |
-| Client exit | Claude fails and unrelated websites remain usable |
-| Client not started after reboot | Claude fails and unrelated websites remain usable |
-| Client recovery | Claude resumes through the intended proxy |
-| Unprotected route preservation | Sampled unrelated destinations retain their baseline PAC decision, proxy group, exit class and DNS path |
-| Subscription update | Protection remains effective after update and reload |
-| Restore | Backup restores and the client can load the restored state |
+| Interception | System proxy can be off and every declared Claude client still appears in the TUN/core log |
+| Rule mode | Runtime controller reports rule mode after reload/restart |
+| Protected group | Protected group resolves only to the intended nested selector and current approved node |
+| Claude TCP | Fresh Claude request logs the protected group and approved concrete node |
+| DNS transport | Fresh resolver connection logs the same protected group and node |
+| Forbidden DNS | No mainland public DNS or local-ISP resolver appears in the test |
+| Plain DNS bypass | Hard-coded or unexpected port 53 traffic is rejected or otherwise cannot expose protected queries |
+| IPv6 | Approved exit or clean failure |
+| WebRTC | No public local address; non-proxied UDP is disabled or rejected |
+| UDP/QUIC | Approved proxy path or explicit rejection; no `DIRECT` continuation |
+| OS proxy | Off when TUN-only operation is the chosen architecture |
+| Dynamic interface | No configuration depends on a particular `utunN` number |
+| Restart | Rule mode, group chain, DNS and browser protections remain effective |
+| Subscription update | Refresh and reload do not remove any invariant |
+| Unrelated routing | Representative domestic, LAN and foreign destinations retain the user's intended rule behavior |
 
-Test every Claude client declared in scope separately. A browser result does not prove a desktop client, CLI, extension, or embedded WebView is protected. A generic IP-check website cannot substitute for a protected Claude request correlated with the routing/core log.
+Use [Claude AI IP risk detection](https://ip.net.coffee/claude/) as one evidence source. Correlate its result with local controller logs; the webpage alone cannot prove the group chain or subscription persistence.
 
-### 6. Report the outcome
+## Report
 
 Lead with one conclusion:
 
 - **Accepted for declared scope**: every mandatory gate passed;
-- **Partially verified**: no observed failure, but at least one mandatory gate was not tested;
-- **Rejected**: at least one mandatory gate failed.
+- **Partially verified**: no observed failure, but at least one gate was not tested;
+- **Rejected**: at least one gate failed.
 
-Return a compact table:
+Return a compact table with gate, status, redacted evidence and remaining risk. Never label an unrun test `PASS`.
 
-| Gate | Status | Redacted evidence | Remaining risk |
-|---|---|---|---|
-
-Only **Accepted for declared scope** may be summarized as “Claude network leakage solved.” Keep implementation details brief unless they explain a failed gate or the user asks for them.
-
-## Safety boundary
-
-This procedure reduces network-path inconsistencies. It cannot guarantee that Claude will never restrict an account and does not remove risks from proxy IP reputation, cookies, account history, fingerprints, time zone, language, platform policy, or the proxy provider itself observing the user's source IP.
+This skill reduces network-path inconsistency risk. It cannot guarantee account safety against proxy-IP reputation, cookies, history, fingerprinting, time zone, language or platform policy.
