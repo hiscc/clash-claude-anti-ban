@@ -1,0 +1,7 @@
+.DS_Store
+*.log
+tmp/
+coverage/
+test-output/
+*.local.yaml
+*.local.yml

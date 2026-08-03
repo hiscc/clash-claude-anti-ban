@@ -1,0 +1,26 @@
+proxies:
+- name: TW-DEMO
+  type: socks5
+  server: 127.0.0.1
+  port: 65535
+proxy-groups:
+- name: openAI
+  type: select
+  proxies:
+  - TW-DEMO
+- name: 主代理
+  type: select
+  proxies:
+  - TW-DEMO
+  - 本地直连
+- name: 本地直连
+  type: select
+  proxies:
+  - DIRECT
+- name: 漏网流量
+  type: select
+  proxies:
+  - 主代理
+  - 本地直连
+rules:
+- MATCH,漏网流量
