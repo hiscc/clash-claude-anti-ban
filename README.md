@@ -22,6 +22,12 @@
 https://github.com/hiscc/clash-claude-anti-ban
 ```
 
+## 快速检测
+
+打开 [Claude AI IP 风险检测](https://ip.net.coffee/claude/)，检查 Claude 出口 IP、DNS 和 WebRTC/UDP 是否一致，并把结果交给 AI 分析。
+
+该网页是验收证据之一，不能代替代理退出、IPv6、应用旁路和订阅更新测试。分享截图前请隐藏完整公网 IP。
+
 ## 连上代理仍可能泄漏
 
 | 情况 | 风险 |
