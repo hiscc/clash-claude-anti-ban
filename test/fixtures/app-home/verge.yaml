@@ -1,9 +1,0 @@
-enable_tun_mode: false
-enable_system_proxy: false
-enable_proxy_guard: false
-enable_dns_settings: false
-proxy_auto_config: true
-pac_file_content: |
-  function FindProxyForURL(url, host) {
-    return "PROXY 127.0.0.1:7890; DIRECT;";
-  }

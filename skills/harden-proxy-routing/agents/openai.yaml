@@ -1,4 +1,0 @@
-interface:
-  display_name: "Harden Proxy Routing"
-  short_description: "Diagnose and close IP, DNS, IPv6, and fail-open proxy leaks"
-  default_prompt: "Use $harden-proxy-routing to inspect my actual proxy client, design and implement a client-specific fix, then verify every acceptance gate."
