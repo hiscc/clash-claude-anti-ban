@@ -116,18 +116,34 @@ If XPro stores profiles in iCloud and a background persistence agent lacks permi
 
 ## Optional: macOS exit-time kill switch
 
-Only when the user explicitly asks that Claude fail while the proxy app is closed, crashed or its TUN is down, use [kill-switch/macos-pf](kill-switch/macos-pf/README.md). It does not replace any invariant above.
+Implement only when the user explicitly asks that Claude fail while the proxy app is closed, crashed or its TUN is down. It does not replace any invariant above. Installing adds root-level persistence; get the user's consent first.
 
-- It blocks Anthropic's published ranges (`160.79.104.0/21`, `2607:6bc0::/48`) on hardware ports only, enumerated at every load, so it never depends on a `utunN` number.
-- Re-check the ranges against [the official IP page](https://platform.claude.com/docs/en/api/ip-addresses) before installing.
-- Installing writes a root LaunchDaemon; get the user's consent for that persistence.
-- Gate: with the proxy active, Claude still succeeds; a request bound to the physical interface (`curl --interface <hardware port> https://160.79.104.10`) fails, while a non-Anthropic control address succeeds.
+Target behavior: Anthropic destinations are rejected on hardware network ports, so they can only leave through the proxy core.
+
+1. Read Anthropic's current inbound ranges from [the official IP page](https://platform.claude.com/docs/en/api/ip-addresses) (as of 2026-10: `160.79.104.0/21`, `2607:6bc0::/48`). Filter by IP, not domain, so every Claude subdomain is covered.
+2. Enumerate hardware ports with `networksetup -listallhardwareports` at load time. Never list `utunN` interfaces and never allow-list a specific TUN number.
+3. Load `block return out quick` rules for those ranges on the hardware ports into a sub-anchor of the existing `com.apple/*` anchor point (for example `com.apple/claude-killswitch`) and enable pf with `pfctl -E`. Do not edit or flush `/etc/pf.conf`.
+4. Persist with a root LaunchDaemon that reloads the anchor at boot (`RunAtLoad`) and on network configuration changes (`WatchPaths` on `/Library/Preferences/SystemConfiguration/preferences.plist`), so newly added adapters are covered.
+5. Record the anchor, daemon and file locations, plus the removal steps: boot out the daemon, flush the anchor, delete the files.
+
+Why proxied traffic still works: with the proxy active, Claude traffic enters the TUN or a local proxy port, and the hardware port only carries connections to the proxy node. A proxy rule that sends Claude to `DIRECT` is rejected too; fix that rule instead of removing the kill switch.
+
+Gate, with the proxy active:
+
+| Check | PASS condition |
+|---|---|
+| Proxied Claude | `claude.ai` and `api.anthropic.com` return HTTP status codes |
+| Direct Claude | `curl --interface <connected hardware port> https://160.79.104.10` fails to connect |
+| Control | The same interface-bound request to a non-Anthropic address succeeds |
+| Persistence | Rules are present after a reboot |
+
+Residual risks: while the proxy is down, the OS still sends Claude DNS queries to the local resolver; Claude subdomains hosted outside the published ranges are not covered.
 
 ## Acceptance gates
 
 Run every applicable gate and mark it `PASS`, `FAIL` or `NOT TESTED`.
 
-The exit-time kill switch below is optional and outside these gates; add its row only when it was installed.
+The exit-time kill switch above is optional and outside these gates; add its row only when it was installed.
 
 | Gate | PASS condition |
 |---|---|

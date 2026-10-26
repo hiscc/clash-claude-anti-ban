@@ -58,7 +58,7 @@ DNS 服务可能使用 Anycast，因此检测到的城市不必与节点城市�
 
 ## 可选：代理未运行时熔断（macOS）
 
-以上验收针对「代理开着却泄漏」。如果还要求代理软件没开、崩溃或 TUN 断开时 Claude 也必须连不上，可另外安装 [kill-switch/macos-pf](kill-switch/macos-pf/README.md)：在物理网卡上拒绝 Anthropic 官方 IP 段，不依赖 `utunN` 编号。
+以上验收针对「代理开着却泄漏」。如果还要求代理软件没开、崩溃或 TUN 断开时 Claude 也必须连不上，可在同一段 AI 指令里加上这项要求，AI 会按 [SKILL.md](SKILL.md) 的「Optional: macOS exit-time kill switch」实施：用 macOS 自带防火墙 pf 在物理网卡上拒绝 Anthropic 官方 IP 段，不依赖 `utunN` 编号，开机和网络变化时自动重载。
 
 本项目降低的是网络路径不一致带来的风控风险，不能保证账号永不受限。代理 IP 信誉、Cookie、账号历史、设备指纹和平台政策仍可能影响风控。
 
