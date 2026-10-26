@@ -1,6 +1,6 @@
 ---
 name: clash-claude-anti-ban
-description: Diagnose and fix proxy configurations where Claude uses an unexpected node, DIRECT path, mainland-China DNS, uncovered IPv6, or bypassing WebRTC/UDP/QUIC while a proxy is active. Use when configuring Clash, ClashX Pro/XPro, Clash Verge Rev, Mihomo, VPN or similar clients so Claude HTTPS and DNS follow the user-approved proxy region in rule mode, with runtime and subscription-persistence verification.
+description: Diagnose and fix proxy configurations where Claude uses an unexpected node, DIRECT path, mainland-China DNS, uncovered IPv6, or bypassing WebRTC/UDP/QUIC while a proxy is active, and make Claude connections fail outright when no proxy is running. Use when configuring Clash, ClashX Pro/XPro, Clash Verge Rev, Mihomo, VPN or similar clients so Claude HTTPS and DNS follow the user-approved proxy region in rule mode, with runtime and subscription-persistence verification.
 ---
 
 # Claude Proxy Path Hardening
@@ -15,9 +15,10 @@ Implement and prove this result on the user's actual device:
 | Claude DNS/DoH/DoT | Use an encrypted resolver through the same approved proxy path; never use mainland-China or local-ISP DNS |
 | Claude IPv6 | Use the approved path or fail cleanly |
 | Claude WebRTC/UDP/QUIC | Use the approved path or be rejected; never fall through to `DIRECT` |
+| Claude with no proxy running | Proxy app closed, crashed or TUN down: the connection fails at the OS firewall and never leaves through a hardware port |
 | Unrelated traffic | Preserve the user's intended rule-mode routing |
 
-Do not replace this objective with a proxy-process exit guard. In regions where Claude direct access already fails, the observed risk is normally an active proxy choosing an unexpected egress or DNS path. Implement an exit-time kill switch only when the user separately requests it and a baseline proves that direct Claude access succeeds.
+Both layers are required. The proxy-path invariants stop a running proxy from choosing an unexpected egress or DNS path; the [no-proxy kill switch](#no-proxy-kill-switch) stops Claude from leaving directly when no proxy is running. Neither replaces the other. Do not skip the kill switch because direct Claude access currently fails on the user's network: reachability changes, and the kill switch makes failure deterministic.
 
 Do not stop at advice or example YAML when implementation is authorized. Inspect, back up, modify, reload and verify the effective runtime.
 
@@ -92,6 +93,7 @@ Choose mechanisms supported by the detected client and version. The final config
 8. For each protected TCP rule targeting a UDP-incapable group, add a later matching `REJECT` rule or an equivalent UDP-safe control. TCP must hit the proxy rule first; unsupported UDP must continue to reject, never direct.
 9. Disable or constrain browser-specific DoH, non-proxied WebRTC UDP and QUIC when they can bypass the verified path.
 10. Preserve the repair across subscription refreshes. Prefer supported merge/override facilities; otherwise install an idempotent post-update patcher and prove it runs in the profile's real storage location.
+11. Install the [no-proxy kill switch](#no-proxy-kill-switch).
 
 Do not claim that `tun: true`, Fake-IP, an overseas resolver address or a group named `openAI` satisfies these invariants without runtime evidence.
 
@@ -114,11 +116,13 @@ Legacy Clash v1.10's built-in DoH dialer can connect directly rather than throug
 
 If XPro stores profiles in iCloud and a background persistence agent lacks permission to read that path, do not report persistence as solved. Use a supported local profile/override location or another mechanism that survives unattended subscription updates.
 
-## Optional: macOS exit-time kill switch
+## No-proxy kill switch
 
-Implement only when the user explicitly asks that Claude fail while the proxy app is closed, crashed or its TUN is down. It does not replace any invariant above. Installing adds root-level persistence; get the user's consent first.
+Required. Target behavior: Anthropic destinations are rejected on hardware network ports, so Claude can only leave through the proxy core. This covers a closed or crashed proxy app, a TUN that is down, the proxy's direct mode, and any proxy rule that sends Claude to `DIRECT`.
 
-Target behavior: Anthropic destinations are rejected on hardware network ports, so they can only leave through the proxy core.
+Installing adds root-level persistence. Tell the user what will be installed and where before writing it, and get consent.
+
+### macOS (pf)
 
 1. Read Anthropic's current inbound ranges from [the official IP page](https://platform.claude.com/docs/en/api/ip-addresses) (as of 2026-10: `160.79.104.0/21`, `2607:6bc0::/48`). Filter by IP, not domain, so every Claude subdomain is covered.
 2. Enumerate hardware ports with `networksetup -listallhardwareports` at load time. Never list `utunN` interfaces and never allow-list a specific TUN number.
@@ -137,13 +141,15 @@ Gate, with the proxy active:
 | Control | The same interface-bound request to a non-Anthropic address succeeds |
 | Persistence | Rules are present after a reboot |
 
+### Other operating systems
+
+Implement the equivalent with the OS firewall: outbound block rules for the same ranges, bound to physical adapters rather than the TUN adapter, loaded at boot. If no equivalent can be implemented, mark the kill-switch gate `FAIL`, never `PASS`.
+
 Residual risks: while the proxy is down, the OS still sends Claude DNS queries to the local resolver; Claude subdomains hosted outside the published ranges are not covered.
 
 ## Acceptance gates
 
 Run every applicable gate and mark it `PASS`, `FAIL` or `NOT TESTED`.
-
-The exit-time kill switch above is optional and outside these gates; add its row only when it was installed.
 
 | Gate | PASS condition |
 |---|---|
@@ -162,6 +168,7 @@ The exit-time kill switch above is optional and outside these gates; add its row
 | Restart | Rule mode, group chain, DNS and browser protections remain effective |
 | Subscription update | Refresh and reload do not remove any invariant |
 | Unrelated routing | Representative domestic, LAN and foreign destinations retain the user's intended rule behavior |
+| No-proxy kill switch | Every check in the [kill-switch gate](#no-proxy-kill-switch) passes, including persistence after reboot |
 
 Use [Claude AI IP risk detection](https://ip.net.coffee/claude/) as one evidence source. Correlate its result with local controller logs; the webpage alone cannot prove the group chain or subscription persistence.
 
