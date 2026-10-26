@@ -114,9 +114,20 @@ Legacy Clash v1.10's built-in DoH dialer can connect directly rather than throug
 
 If XPro stores profiles in iCloud and a background persistence agent lacks permission to read that path, do not report persistence as solved. Use a supported local profile/override location or another mechanism that survives unattended subscription updates.
 
+## Optional: macOS exit-time kill switch
+
+Only when the user explicitly asks that Claude fail while the proxy app is closed, crashed or its TUN is down, use [kill-switch/macos-pf](kill-switch/macos-pf/README.md). It does not replace any invariant above.
+
+- It blocks Anthropic's published ranges (`160.79.104.0/21`, `2607:6bc0::/48`) on hardware ports only, enumerated at every load, so it never depends on a `utunN` number.
+- Re-check the ranges against [the official IP page](https://platform.claude.com/docs/en/api/ip-addresses) before installing.
+- Installing writes a root LaunchDaemon; get the user's consent for that persistence.
+- Gate: with the proxy active, Claude still succeeds; a request bound to the physical interface (`curl --interface <hardware port> https://160.79.104.10`) fails, while a non-Anthropic control address succeeds.
+
 ## Acceptance gates
 
 Run every applicable gate and mark it `PASS`, `FAIL` or `NOT TESTED`.
+
+The exit-time kill switch below is optional and outside these gates; add its row only when it was installed.
 
 | Gate | PASS condition |
 |---|---|

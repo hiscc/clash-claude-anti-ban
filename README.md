@@ -56,6 +56,10 @@ AI 必须读取 [SKILL.md](SKILL.md)，根据实际代理软件和核心版本�
 
 DNS 服务可能使用 Anycast，因此检测到的城市不必与节点城市逐字一致；但实际 DNS 连接必须经指定代理节点，且不能出现中国大陆或本地运营商解析路径。
 
+## 可选：代理未运行时熔断（macOS）
+
+以上验收针对「代理开着却泄漏」。如果还要求代理软件没开、崩溃或 TUN 断开时 Claude 也必须连不上，可另外安装 [kill-switch/macos-pf](kill-switch/macos-pf/README.md)：在物理网卡上拒绝 Anthropic 官方 IP 段，不依赖 `utunN` 编号。
+
 本项目降低的是网络路径不一致带来的风控风险，不能保证账号永不受限。代理 IP 信誉、Cookie、账号历史、设备指纹和平台政策仍可能影响风控。
 
 ## License
