@@ -237,3 +237,24 @@ Lead with one conclusion:
 Return a compact table with gate, status, redacted evidence, and remaining risk (including multi-device concurrent login risk if the same account is used on mobile/other hosts). Never label an unrun test `PASS`.
 
 This skill reduces network-path inconsistency and direct-egress risk. It cannot guarantee account safety against proxy-IP reputation, cookies, account history, multi-device multi-region usage, fingerprinting, time zone, language, or platform policy.
+
+## Three-layer hardening checklist
+
+Keep all three defense layers aligned when auditing or handing off an environment:
+
+### 1. Node selection
+- **Fixed IP over low latency**: Verify exit IP consistency across both immediate repeats and different time windows using unauthenticated probes only; reject rotating pools and unsupported/geo-tainted (`Detected: CN`) datacenter IPs even if generic GeoIP shows US/TW.
+- **Protocol stability**: Prefer reliable TCP-based relay/proxy nodes on fixed broadband for long-lived streaming sessions; treat UDP-based protocols (`TUIC`/`Hysteria`) as mobile/weak-network fallbacks subject to peak-hour ISP UDP QoS.
+- **Account & multi-device isolation**: Enforce one dedicated node per account where multiple accounts exist; align desktop and mobile clients on the same curated exact-whitelist node, and never probe multiple nodes with an active logged-in session.
+- **Long-term upgrade**: For high-value accounts on frequently tainted shared nodes, move AI traffic to a dedicated static ISP/clean VPS egress while keeping general browsing on the shared subscription.
+
+### 2. Proxy software hardening
+- **Isolated manual group**: Decouple Claude from daily-browsing selectors; include only vetted supported-region nodes with zero `DIRECT`, auto-test, or forbidden-region members.
+- **Complete rule & DNS closure**: Cover all 4 protected domains + official Anthropic IPv4/IPv6 ranges (`no-resolve`), enable `sniffer`, set `ipv6: false`, hijack UDP+TCP port 53, reject port 853, and pin per-domain encrypted DNS to the same Claude group (switching to domain-based DoH if the node blocks pure-IP targets).
+- **UDP/QUIC & WebRTC STUN protection**: Explicitly `REJECT` UDP for protected domains and common foreign public STUN hosts so Electron apps and Safari cannot leak via `MATCH → DIRECT`, without globally blocking `UDP/3478`.
+- **Single source of truth & update resilience**: Eliminate GUI-vs-script override conflicts and enforce post-update dead-node pruning with fail-closed `REJECT` when zero approved nodes remain.
+
+### 3. Host protection
+- **OS firewall kill switch**: Block all published Anthropic IPv4/IPv6 blocks (and any verified additional AI tables with zero direct-exception overlap) at boot—globally under Fake-IP, or across all non-proxy adapters under Redir-Host—flushing existing firewall states and preventing `pfctl -E` token leaks.
+- **Browser, OS & client hygiene**: Lock Chromium `WebRtcIPHandling = disable_non_proxied_udp`, `DnsOverHttpsMode = off`, `QuicAllowed = false`; disable iCloud Private Relay; clear conflicting proxy env vars, browser proxy extensions, and retired proxy/DNS daemons; flush DNS caches and close stale sockets on cutover; optionally set `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`.
+- **Mobile counterparts**: Enable Android Always-on VPN + Block connections without VPN, or iOS VPN On-Demand (with iCloud Private Relay off) synced via an exact-whitelist override rather than broad region regexes.

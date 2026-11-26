@@ -77,6 +77,30 @@ AI 必须读取 [SKILL.md](SKILL.md)，按本机实际代理软件（Mihomo / Cl
 
 本项目降低的是网络路径不一致与直连暴露带来的风控风险，不能保证账号永不受限。代理 IP 信誉、多设备跨区同时在线、Cookie、账号历史、设备指纹与平台政策仍会影响风控。
 
+## 三层完整防护速查
+
+要把封号和 IP 暴露风险压到最低，需同时守住 **节点选择 → 代理软件防护 → 本机防护** 三道关口：
+
+### 1. 节点选择
+- **固定 IP 优先于低延时**：先用无鉴权探测做「单轮多次 + 跨时段」复测，剔除背后多落地轮询的节点；AI 场景下稳定不断流（如 300–500ms）远胜低延时却频繁跳 IP 的节点。
+- **排雷“IP 送中”与禁区**：常规 GeoIP 显示美国/台湾不代表模型 API 放行，共享机房段可能已被模型内部地理库标为 `CN`；严禁把香港、澳门、大陆、俄罗斯及自动测速组放进 Claude 专用组。
+- **协议取舍**：固定宽带主力优先稳定的 TCP 代理节点（晚高峰不易被 UDP QoS 掐断导致长流式中断）；`TUIC` / `Hysteria` 等 UDP 协议可作移动弱网备选。
+- **一号一 IP、多端对齐**：多账号之间尽量物理拆池不共用出口 IP；同一账号在电脑与手机（如 Clash Verge Rev + iOS Stash）上应同步精确白名单并选同一地区/同一节点，**绝不拿主力登录态短时连测多个节点**。
+- **终极稳态**：若主力账号价值高且共享机场反复被用脏，建议单独配置独享静态 ISP/纯净 VPS 落地，只承接 AI 流量。
+
+### 2. 代理软件防护
+- **独立分组解耦**：给 Claude 建独立手选分组，与日常上网的“节点选择组”隔离，防止日常切节点误把后台 Claude 带进禁区。
+- **全范围规则 + 兜底**：覆盖 `claude.ai`、`claude.com`、`anthropic.com`、`claudeusercontent.com` 以及 Anthropic 全部官方 IP 段（`IP-CIDR`/`IP-CIDR6` 带 `no-resolve`），开启 `sniffer` 并关闭 `ipv6`。
+- **同区加密 DNS**：开启 `tun.dns-hijack`（UDP + TCP 53）并拒绝 `853` 端口；通过按域名 `nameserver-policy` 让 Claude 的加密 DNS 走同一 Claude 组（若节点拒连 `1.1.1.1`/`8.8.8.8` 等纯 IP，改用 `dns.twnic.tw` / `doh.opendns.com` 等域名型 DoH 并实测 `/dns/query`）。
+- **UDP / QUIC / WebRTC STUN 封堵**：对 Claude 域名显式 `REJECT` UDP/QUIC，并对常见境外公共 STUN 服务器（如 `stun.cloudflare.com`、`stun*.l.google.com`、`stun.stunprotocol.org`）精准 `REJECT` UDP，兜住 Electron 桌面端与 Safari 旁路且不误伤国内音视频通话。
+- **GUI 单一信源与订阅防炸**：避免 GUI 覆写与 Merge/Script 重复写 `dns`/`tun`/`ipv6` 引发静默丢弃；在订阅更新后自动剔除下线/改名节点名，零可用支持地区节点时 fail-closed 为 `REJECT`。
+
+### 3. 本机防护
+- **系统防火墙直连熔断（桌面端）**：macOS 用原生 `pf` 子锚点 + `table` 拦截全部官方 IP 段（Fake-IP 下全接口阻断，同时防住物理网卡、USB 热点与共存 VPN 旁路），配合 `pfctl -k` 清存量状态、避免 `pfctl -E` 令牌泄漏，并开机自动加载；Linux/Windows 用对应系统防火墙实现等效出站阻断。
+- **浏览器与系统旁路收口**：Chromium 浏览器锁定 `WebRtcIPHandling = disable_non_proxied_udp`、`DnsOverHttpsMode = off`、`QuicAllowed = false`；关闭 iCloud 专用代理（Private Relay），清理冲突的 `HTTP_PROXY`/`NO_PROXY` 环境变量、浏览器代理插件及残留旧代理守护进程。
+- **移动端兜底**：Android 开启系统级「始终开启 VPN + 阻止未经 VPN 的连接」；iOS（如 Stash）开启「按需连接（On-Demand）」、关闭 iCloud 专用代理，并通过精确白名单覆写保持与电脑端规则对齐。
+- **切换卫生**：改规则或切节点后清系统/浏览器 DNS 缓存并断开存量 Claude 长连接；客户端层面可按需配置 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` 减少非必要外连。
+
 ## License
 
 MIT
