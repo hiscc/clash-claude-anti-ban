@@ -9,11 +9,11 @@
 把本项目链接交给能够读取本机配置并执行命令的 AI：
 
 ```text
-请读取这个项目的 SKILL.md，全面排查并修复我的 Claude 代理与本机网络泄漏，安装或更新代理未运行时的系统防火墙直连熔断，并完成运行时与断代验收：
+请读取这个项目的 SKILL.md，全面排查并修复我的 Claude 代理与本机网络泄漏（含 WebRTC/STUN），安装或更新代理未运行时的系统防火墙直连熔断，并完成运行时与无代理熔断验收（全部探测禁止携带我的本地 session/Cookie）：
 https://github.com/hiscc/clash-claude-anti-ban
 ```
 
-AI 必须读取 [SKILL.md](SKILL.md)，按本机实际代理软件（Mihomo / Clash Verge Rev、ClashX Pro/XPro 等）与操作系统实施并做运行时验收；不能只返回教程、示例配置或未经执行的结论。
+AI 必须读取 [SKILL.md](SKILL.md)，按本机实际代理软件（Mihomo / Clash Verge Rev、ClashX Pro/XPro 等）与操作系统实施并做运行时验收；不能只返回教程、示例配置或未经执行的结论。若手机端同时使用 iOS Stash，可顺带让 AI 按本机白名单生成同步至 Stash iCloud 的 `.stoverride` 覆写文件。
 
 ## 推荐目标状态
 
