@@ -1,68 +1,81 @@
 # clash-claude-anti-ban
 
-检查并修复两类问题：“代理已经开启，但 Claude 仍使用预期外节点、直连出口或大陆 DNS”，以及“代理没开或挂了，Claude 仍能直接连出去”。
+检查并加固两层防线：**代理运行期路径不变式**（杜绝“代理开着，但 Claude 走了预期外节点、禁区、直连、错区/大陆 DNS、IPv6 或 UDP/QUIC 旁路”），以及**本机网络层直连熔断**（代理未开、崩溃、TUN 断开、切换直连或规则漏配时，Claude 连接在系统防火墙层直接失败）。
 
-本项目只关心最终结果：**使用 Claude 时，HTTPS、DNS、IPv4/IPv6、WebRTC 与 UDP/QUIC 不得暴露真实网络路径，并且必须与用户选定的代理地区一致；代理未运行时，Claude 连接必须直接失败。**
+本项目只关心最终可验证的结果：**使用 Claude 时，HTTPS、资产域、DNS、IPv4/IPv6、WebRTC 与 UDP/QUIC 不得暴露真实网络路径，且必须稳定锁定在用户批准的支持地区节点；不走代理时，本机无法向 Claude 官方网络发起连接。**
 
 ## AI 执行入口
 
 把本项目链接交给能够读取本机配置并执行命令的 AI：
 
 ```text
-请读取这个项目的 SKILL.md，检查并修复我的 Claude 代理泄漏，安装代理未运行时的直连熔断，完成运行时验收：
+请读取这个项目的 SKILL.md，全面排查并修复我的 Claude 代理与本机网络泄漏，安装或更新代理未运行时的系统防火墙直连熔断，并完成运行时与断代验收：
 https://github.com/hiscc/clash-claude-anti-ban
 ```
 
-AI 必须读取 [SKILL.md](SKILL.md)，根据实际代理软件和核心版本实施；不能只返回教程、示例配置或未经执行的结论。
+AI 必须读取 [SKILL.md](SKILL.md)，按本机实际代理软件（Mihomo / Clash Verge Rev、ClashX Pro/XPro 等）与操作系统实施并做运行时验收；不能只返回教程、示例配置或未经执行的结论。
 
-## XPro 推荐状态
+## 推荐目标状态
 
-| 选项 | 状态 | 含义 |
+| 维度 | 推荐状态 | 含义 |
 |---|---|---|
-| 增强模式 / TUN | 开 | 接管不遵守系统代理的软件及 DNS |
-| 设为系统代理 | 关 | TUN 已接管时无需重复开启 HTTP/HTTPS/SOCKS 系统代理 |
-| 出站模式 | 规则 | 保留国内直连、国外代理等分流能力 |
-| Claude 代理组 | `openAI → 节点选择组 → 当前手选节点` | Claude 跟随用户明确选择的节点，不进入自动兜底或预期外节点 |
-| DNS | 加密 DNS 经同一代理组 | 台湾节点不得继续使用大陆 DNS 出口 |
-| IPv6 / UDP / QUIC | 代理接管或拒绝 | 不能在代理不支持时回落直连 |
+| 增强模式 / TUN | 开（劫持 UDP + TCP 53） | 接管不遵守系统代理的客户端（CLI/桌面端/IDE）与 DNS |
+| 设为系统代理 | 关（验证 TUN 全覆盖后） | 避免与 TUN 重复接管、环境变量冲突或误判实际路径 |
+| 出站模式 | 规则（Rule） | 保留国内直连、其他服务分流与多 AI 平台分区能力 |
+| Claude 代理组 | **独立专用组** → 固定支持地区手选节点 | 与日常上网的“节点选择组”解耦，防止日常切到香港/自动测速时把后台 Claude 带偏 |
+| 覆盖范围 | `claude.ai` / `claude.com` / `anthropic.com` / `claudeusercontent.com` + 官方 IP 段（`no-resolve`） | 防止 Artifacts/桥接域掉进 `MATCH/DIRECT`，防止纯 IP 连接绕过域名规则 |
+| DNS | 按域名 `nameserver-policy` 经**同一 Claude 组**走加密 DNS | 业务和 DNS 同区同组，不走大陆/运营商 DNS，也不被其他服务（如 Google/美区）串区；若节点拒连纯 IP（`1.1.1.1`/`8.8.8.8`），改用域名型 DoH（如 `dns.twnic.tw` / `doh.opendns.com`） |
+| IPv6 / UDP / QUIC / WebRTC | 代理接管或明确 `REJECT` + 浏览器策略 + 代理层境外 STUN 拦截 | 节点 `udp: false` 时不回落直连；Chrome 配 `disable_non_proxied_udp`，同时在代理层拦截境外公共 STUN UDP（兜住 Electron/Safari 且不误伤飞书/微信通话） |
+| 客户端与系统环境 | 清理冲突代理环境变量、浏览器代理插件、iCloud 专用代理及残留旧守护进程 | 避免浏览器、Claude Code CLI、桌面端各走各的出口，制造同号双地并发 |
+| 订阅更新防炸与单一信源 | 扩展脚本自动剔除下线/改名节点，零节点时 fail-closed 为 `REJECT`；GUI 接管字段不重复写入 | 订阅改名不会导致重载报错或回落直连，启动零“字段已被丢弃”警告 |
+| 本机网络直连熔断 | OS 防火墙拦截 Anthropic 全部官方 IPv4/IPv6 段（可按需扩展至其他 AI 平台专用入口段） | 代理关闭/崩溃/卡死/TUN 断开/规则误走直连时，本机直连在内核层 2–3ms 立即失败 |
 
-增强模式接管流量，不等于所有流量都走代理节点：规则模式仍会让国内和局域网流量按规则直连。`utunN` 是 macOS 动态分配的接口号，重启后可能变化，配置不得硬编码该编号。
+> 增强模式接管流量 ≠ 所有流量都走代理节点：规则模式仍按规则分流。`utunN` 是 macOS 动态接口号，配置不得依赖动态编号；在 Fake-IP 模式下，系统防火墙可直接全接口阻断 Anthropic 真实 IP 段，连带堵死共存 VPN 与手机热点旁路。
 
-## 可能泄漏的情况
+## 常见泄漏与风控隐患
 
-| 情况 | 结果 |
+| 情况 | 真实后果 |
 |---|---|
-| Claude 规则命中 `DIRECT` 或错误节点 | HTTPS 出口与预期地区不一致 |
-| Claude 组进入自动测速或其他兜底组 | 节点故障或重载后切到未批准地区 |
-| 规则模式使用大陆 DNS / 国内 DoH | 业务 IP 在台湾，DNS 路径却在大陆 |
-| 只开系统代理、未开 TUN | 不遵守系统代理的软件可能直连 |
-| 同时无理由开启系统代理和 TUN | 链路重复、诊断困难，实际路径容易误判 |
-| HTTP 节点不支持 UDP，旧 Clash 跳过该规则 | WebRTC、QUIC 或其他 UDP 可能最终 `DIRECT` |
-| IPv6 未被接管 | IPv4 走代理，IPv6 走本地出口 |
-| 浏览器自带 DoH / WebRTC / QUIC 旁路 | 绕过代理核心的 DNS 或 UDP 约束 |
-| 订阅更新覆盖本地修改 | 修复在更新或重启后消失 |
-| 代理软件未开、崩溃或 TUN 断开 | 流量不经代理核心，Claude 直接从本地网络出去 |
+| Claude 绑在日常“节点选择组”下 | 日常看内容顺手切到香港/测速组，后台 Claude 瞬间从不支持地区发起请求 |
+| `claudeusercontent.com` 未加规则 | 掉入 `MATCH`（常见为 `DIRECT`），直接暴露本地真实 IP |
+| GUI 全局配置（如 `config.yaml` / `dns_config.yaml`）覆盖脚本/Merge | 以为配置了 `ipv6: false` 和同区 DNS，实际运行时被静默覆盖，出现“HTTPS 台湾 + DNS 美国/大陆”割裂 |
+| 仅封了 `160.79.104.0/21` 而漏掉 `153.61.224.0/22` / `153.61.208.0/20` | 本机直连熔断不完整（注意 `153.61.208.0/20` 止于 `.223.255`，不含 `153.61.224.0/22`），代理挂掉时部分入口仍可直连握手 |
+| 只配了 Chrome WebRTC 策略、未拦代理层境外 STUN | Electron 桌面端（Claude Desktop）与 Safari 不读 Chrome 策略，若 `MATCH` 走 `DIRECT`，第三方 STUN UDP 仍会漏出真实公网 IP |
+| 节点拒连纯 IP 导致 `1.1.1.1`/`8.8.8.8` DoH 报 EOF | 表面配置了加密 DNS，实际 `/dns/query` 全败；需换用域名型 DoH 并实测通过 |
+| 机场订阅删减或改名节点 | 硬编码旧节点名的分组会导致 Mihomo 报 `proxy not exist` 重载失败，需脚本动态清洗且零节点时 `REJECT` |
+| 用带本地 session/Cookie 的请求跨多节点测速 | 测试动作本身就会制造短时多 IP 登录风控信号；验收必须全程使用无鉴权公开端点 |
+| 只按物理网卡写防火墙规则 | 代理挂掉但连着公司 VPN / Tailscale / USB 热点时，流量经其他接口绕过熔断 |
+| 切节点、改规则或加载防火墙后未清存量连接/DNS 缓存 | 旧 TCP/HTTP2/WebSocket 长连接和 PF state 继续走旧出口，形成短时双地 IP 并发 |
+| 机场单节点背后多落地轮询 | 节点名不变，实际出口 IP/ASN 每几分钟漂移一次 |
+| `HTTP_PROXY` / SwitchyOmega / iCloud Private Relay / 旧客户端守护进程残留 | 不同客户端出口割裂，或后台持续写入大量报错日志 |
+| 节点 `udp: false` 且无显式 `REJECT` | WebRTC / QUIC / UDP 回落 `DIRECT` |
+| 浏览器自带 DoH / Async DNS / WebRTC / QUIC / ECH | 绕过代理核心的 DNS、SNI 嗅探或 UDP 约束 |
+| 订阅更新覆盖本地修改 | 加固在自动更新或重启后静默失效 |
+| `WatchPaths` 反复调用 `pfctl -E` | macOS PF 引用计数令牌泄漏，卸载后防火墙状态异常 |
+
+## 本机网络层直连熔断（代理未运行时直接失败）
+
+代理路径加固只在代理运行时生效。为了保证**不走代理时本机根本无法请求 Claude 相关网络**，AI 会在系统防火墙层（macOS 使用原生 `pf` 子锚点，不改动 `/etc/pf.conf`）对 Anthropic 官方发布的全部 IPv4/IPv6 段（以[官方文档](https://platform.claude.com/docs/en/api/ip-addresses)为准，2026-11 含 `160.79.104.0/21`、`153.61.224.0/22`、`153.61.208.0/20`、`2607:6bc0::/48`）实施出站阻断：
+
+- **Fake-IP 模式下优先全接口阻断**：正常走代理时应用访问 `198.18.0.0/15`、代理核心连接代理节点 IP，均不向任何网卡发出目标为 Anthropic 真实 IP 的数据包；全接口阻断既无需硬编码动态 `utunN`，也能同时防住物理网卡、热点和共存 VPN 绕过。
+- **清理存量连接状态 + 防止令牌泄漏**：加载锚点后清理 PF 存量 state（`pfctl -k`），并避免重复调用 `pfctl -E` 造成引用计数泄漏；开机自动生效，支持一键完整卸载。
+- 即使当前本地网络本来就直连不通，也照样安装，让“无代理必失败”成为确定性结果。详见 [SKILL.md](SKILL.md) 的「Host-network kill switch」。
 
 ## 检测与验收
 
-打开 [Claude AI IP 风险检测](https://ip.net.coffee/claude/)，检查出口 IP、DNS 和 WebRTC/UDP。分享截图前请隐藏完整公网 IP。
+网页检测可参考 [Claude AI IP 风险检测](https://ip.net.coffee/claude/)（分享截图前请隐藏完整公网 IP），但**不能单靠单个第三方网页下结论**。AI 必须结合原生命令行与代理核心运行时 API（`/configs`、`/proxies`、`/connections`）逐项验收：
 
-网页只是证据之一。AI 还必须从代理核心日志确认：
+- 最终生效的运行时配置未被 GUI 全局文件覆盖（`mode: rule`、`ipv6`、`dns-hijack`、`sniffer`、策略组均与目标一致）；
+- `claude.ai`、`api.anthropic.com`、`claudeusercontent.com` 均命中独立 Claude 组及支持地区具体节点，连续多次探测出口 IP/ASN 稳定无漂移；
+- Claude 加密 DNS 连接命中**同一** Claude 组与节点，不出现大陆/本地运营商 DNS 或其他地区的串区 DNS；
+- 不支持 UDP 的节点对 Claude UDP/QUIC 明确 `REJECT`，不回落 `DIRECT`；
+- 已清理系统/浏览器 DNS 缓存与存量长连接，且无冲突环境变量、浏览器代理插件或残留旧守护进程；
+- 重启代理与更新订阅后所有不变式依然成立；
+- **本机熔断全段实测通过**：物理口直连 `160.79.104.10`、`153.61.224.1` 及 IPv6 段均立即失败，直连非 Anthropic 地址正常，**真正暂停代理**后无法请求 Claude，重启电脑后规则依然生效且无 `pfctl -E` 令牌泄漏。
 
-- Claude/Anthropic 请求命中指定代理组和当前手选节点；
-- 加密 DNS 连接也命中同一代理组和节点，不出现大陆公共 DNS 或本地 ISP DNS；
-- 不支持代理的 Claude UDP 明确失败或被拒绝，不能回落 `DIRECT`；
-- 系统代理关闭后，增强模式仍能接管实际 Claude 客户端；
-- 规则模式、重启代理和更新订阅后结果仍然成立；
-- 从物理网卡直连 Anthropic 官方 IP 失败，直连其他地址正常，重启电脑后依然如此。
+> DNS 服务可能使用 Anycast，检测到的城市不必与节点城市逐字一致；但代理核心日志必须证明 DNS 传输走的是同一 Claude 节点，且未出现中国大陆、本地运营商或跨区串组解析路径。
 
-DNS 服务可能使用 Anycast，因此检测到的城市不必与节点城市逐字一致；但实际 DNS 连接必须经指定代理节点，且不能出现中国大陆或本地运营商解析路径。
-
-## 代理未运行时直接失败
-
-代理路径加固只在代理运行时起作用。为了让代理没开、崩溃、TUN 断开或被切到直连模式时 Claude 也连不上，AI 会在系统防火墙层拒绝从物理网卡直连 Anthropic 官方 IP 段（macOS 用自带的 pf），不依赖 `utunN` 编号，开机和网络变化时自动重载。即使当前网络本来就直连不通，也照样安装，让“失败”成为确定结果。做法见 [SKILL.md](SKILL.md) 的「No-proxy kill switch」。
-
-本项目降低的是网络路径不一致带来的风控风险，不能保证账号永不受限。代理 IP 信誉、Cookie、账号历史、设备指纹和平台政策仍可能影响风控。
+本项目降低的是网络路径不一致与直连暴露带来的风控风险，不能保证账号永不受限。代理 IP 信誉、多设备跨区同时在线、Cookie、账号历史、设备指纹与平台政策仍会影响风控。
 
 ## License
 
